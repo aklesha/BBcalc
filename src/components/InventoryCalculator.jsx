@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 const InventoryCalculator = () => {
   const [items, setItems] = useState([]);
@@ -6,6 +6,47 @@ const InventoryCalculator = () => {
   const [price, setPrice] = useState('');
   const [error, setError] = useState('');
   const [itemCounter, setItemCounter] = useState(1);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filteredItems, setFilteredItems] = useState([]);
+  const [isSearchActive, setIsSearchActive] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
+  // Load data from localStorage on initial render
+  useEffect(() => {
+    const savedItems = localStorage.getItem('inventoryItems');
+    const savedCounter = localStorage.getItem('itemCounter');
+    
+    if (savedItems) {
+      setItems(JSON.parse(savedItems));
+      setFilteredItems(JSON.parse(savedItems));
+    }
+    
+    if (savedCounter) {
+      setItemCounter(parseInt(savedCounter));
+    }
+  }, []);
+
+  // Update filteredItems when items or searchTerm changes
+  useEffect(() => {
+    if (searchTerm) {
+      const filtered = items.filter(item => 
+        item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.stock.toString().includes(searchTerm) ||
+        item.price.toString().includes(searchTerm) ||
+        item.total.toString().includes(searchTerm)
+      );
+      setFilteredItems(filtered);
+    } else {
+      setFilteredItems(items);
+    }
+  }, [items, searchTerm]);
+
+  // Save to localStorage whenever items change
+  useEffect(() => {
+    localStorage.setItem('inventoryItems', JSON.stringify(items));
+    localStorage.setItem('itemCounter', itemCounter.toString());
+  }, [items, itemCounter]);
 
   const addItem = () => {
     if (!stock || !price) {
@@ -57,6 +98,121 @@ const InventoryCalculator = () => {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
+  const toggleSearch = () => {
+    setIsSearchActive(!isSearchActive);
+    if (isSearchActive) {
+      setSearchTerm('');
+    }
+  };
+
+  const handleSearch = (e) => {
+    setSearchTerm(e.target.value);
+    setCurrentPage(1); // Reset to first page when searching
+  };
+
+  const exportData = () => {
+    // Create CSV content
+    const headers = ['Name', 'Quantity', 'Price', 'Total Value'];
+    const csvContent = [
+      headers.join(','),
+      ...items.map(item => 
+        [
+          item.name,
+          item.stock,
+          item.price.toFixed(2),
+          item.total.toFixed(2)
+        ].join(',')
+      )
+    ].join('\n');
+    
+    // Create a blob and download link
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    
+    // Set up and trigger download
+    link.setAttribute('href', url);
+    link.setAttribute('download', `inventory_data_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const saveReport = () => {
+    // Create a report in HTML format
+    const reportDate = new Date().toLocaleDateString();
+    const reportContent = `
+      <html>
+      <head>
+        <title>Inventory Report - ${reportDate}</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 40px; }
+          h1 { color: #333; }
+          table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+          th { background-color: #f2f2f2; }
+          .total { font-weight: bold; }
+        </style>
+      </head>
+      <body>
+        <h1>Inventory Report - ${reportDate}</h1>
+        <p>Total Inventory Value: $${getTotalValue().toFixed(2)}</p>
+        <p>Total Items: ${items.length}</p>
+        
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Quantity</th>
+              <th>Price</th>
+              <th>Total Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map(item => `
+              <tr>
+                <td>${item.name}</td>
+                <td>${item.stock}</td>
+                <td>$${item.price.toFixed(2)}</td>
+                <td>$${item.total.toFixed(2)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+          <tfoot>
+            <tr class="total">
+              <td colspan="3">Total:</td>
+              <td>$${getTotalValue().toFixed(2)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </body>
+      </html>
+    `;
+    
+    // Create a blob and download link
+    const blob = new Blob([reportContent], { type: 'text/html;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    
+    // Set up and trigger download
+    link.setAttribute('href', url);
+    link.setAttribute('download', `inventory_report_${new Date().toISOString().split('T')[0]}.html`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Calculate pagination
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentItems = filteredItems.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
+
+  // Change page
+  const paginate = (pageNumber) => setCurrentPage(pageNumber);
+
   return (
     <div className="min-h-screen bg-[#f5f2ea] p-6 flex justify-center items-start">
       <div className="w-full max-w-5xl bg-white rounded-xl shadow-sm overflow-hidden">
@@ -72,7 +228,10 @@ const InventoryCalculator = () => {
           </div>
           <h1 className="text-2xl font-semibold text-gray-800">Inventory Calculator</h1>
           <div className="flex items-center space-x-2">
-            <button className="p-2 rounded-full text-gray-400 hover:bg-gray-100">
+            <button 
+              className={`p-2 rounded-full ${isSearchActive ? 'bg-[#ff7757] text-white' : 'text-gray-400 hover:bg-gray-100'}`}
+              onClick={toggleSearch}
+            >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
@@ -89,6 +248,27 @@ const InventoryCalculator = () => {
             </button>
           </div>
         </div>
+
+        {/* Search Bar - Only visible when search is active */}
+        {isSearchActive && (
+          <div className="px-6 py-3 bg-gray-50 border-b border-gray-100">
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={handleSearch}
+                className="block w-full pl-10 pr-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#ff7757] focus:border-transparent"
+                placeholder="Search by name, quantity, price, or value..."
+                autoFocus
+              />
+            </div>
+          </div>
+        )}
 
         <div className="flex">
           {/* Main Content */}
@@ -136,7 +316,7 @@ const InventoryCalculator = () => {
             </div>
             
             {/* Table */}
-            {items.length > 0 ? (
+            {filteredItems.length > 0 ? (
               <div className="bg-white rounded-lg overflow-hidden">
                 <table className="w-full">
                   <thead>
@@ -149,8 +329,8 @@ const InventoryCalculator = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map((item, index) => (
-                      <tr key={item.id} className={`border-b border-gray-50 ${index === items.length - 1 ? 'bg-[#fff8f6]' : ''}`}>
+                    {currentItems.map((item, index) => (
+                      <tr key={item.id} className={`border-b border-gray-50 ${index === currentItems.length - 1 ? 'bg-[#fff8f6]' : ''}`}>
                         <td className="px-6 py-4 text-sm text-gray-800">{item.name}</td>
                         <td className="px-6 py-4 text-sm text-gray-800 text-right">{item.stock}</td>
                         <td className="px-6 py-4 text-sm text-gray-800 text-right">${item.price.toFixed(2)}</td>
@@ -178,36 +358,50 @@ const InventoryCalculator = () => {
                 </table>
                 
                 {/* Pagination */}
-                <div className="flex justify-between items-center px-6 py-4 bg-white border-t border-gray-100">
-                  <div className="text-sm text-gray-500">
-                    1 - {items.length} of {items.length} items
-                  </div>
-                  <div className="flex space-x-1">
-                    <button className="w-8 h-8 flex items-center justify-center rounded-full bg-[#ff7757] text-white">
-                      1
-                    </button>
-                    {items.length > 10 && (
-                      <>
-                        <button className="w-8 h-8 flex items-center justify-center rounded-full text-gray-500 hover:bg-gray-100">
-                          2
+                {totalPages > 1 && (
+                  <div className="flex justify-between items-center px-6 py-4 bg-white border-t border-gray-100">
+                    <div className="text-sm text-gray-500">
+                      {indexOfFirstItem + 1} - {Math.min(indexOfLastItem, filteredItems.length)} of {filteredItems.length} items
+                    </div>
+                    <div className="flex space-x-1">
+                      {[...Array(totalPages).keys()].map(number => (
+                        <button 
+                          key={number + 1}
+                          onClick={() => paginate(number + 1)}
+                          className={`w-8 h-8 flex items-center justify-center rounded-full ${
+                            currentPage === number + 1 
+                              ? 'bg-[#ff7757] text-white' 
+                              : 'text-gray-500 hover:bg-gray-100'
+                          }`}
+                        >
+                          {number + 1}
                         </button>
-                        <button className="w-8 h-8 flex items-center justify-center rounded-full text-gray-500 hover:bg-gray-100">
+                      ))}
+                      {currentPage < totalPages && (
+                        <button 
+                          onClick={() => paginate(currentPage + 1)}
+                          className="w-8 h-8 flex items-center justify-center rounded-full text-gray-500 hover:bg-gray-100"
+                        >
                           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                           </svg>
                         </button>
-                      </>
-                    )}
+                      )}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             ) : (
               <div className="text-center py-12 bg-white rounded-lg border border-gray-100">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
-                <p className="text-gray-500">No items added yet.</p>
-                <p className="text-gray-400 text-sm mt-1">Start by entering stock and price values.</p>
+                <p className="text-gray-500">
+                  {searchTerm ? 'No items match your search criteria.' : 'No items added yet.'}
+                </p>
+                <p className="text-gray-400 text-sm mt-1">
+                  {searchTerm ? 'Try a different search term.' : 'Start by entering stock and price values.'}
+                </p>
               </div>
             )}
           </div>
@@ -229,7 +423,7 @@ const InventoryCalculator = () => {
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-gray-600">Average Price</span>
                   <span className="text-sm font-medium text-gray-800">
-                    ${(getTotalValue() / items.reduce((sum, item) => sum + item.stock, 0)).toFixed(2)}
+                    ${items.length > 0 ? (getTotalValue() / items.reduce((sum, item) => sum + item.stock, 0)).toFixed(2) : '0.00'}
                   </span>
                 </div>
               </div>
@@ -252,20 +446,29 @@ const InventoryCalculator = () => {
               ))}
               
               {items.length > 3 && (
-                <button className="text-[#ff7757] text-sm font-medium hover:underline mt-2">
+                <button 
+                  className="text-[#ff7757] text-sm font-medium hover:underline mt-2"
+                  onClick={() => setIsSearchActive(true)}
+                >
                   View all items
                 </button>
               )}
               
               <div className="mt-8">
                 <h3 className="text-sm font-medium text-gray-700 mb-4">Quick Actions</h3>
-                <button className="w-full py-2 px-4 mb-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center">
+                <button 
+                  onClick={exportData}
+                  className="w-full py-2 px-4 mb-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center"
+                >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                   </svg>
                   Export Data
                 </button>
-                <button className="w-full py-2 px-4 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center">
+                <button 
+                  onClick={saveReport}
+                  className="w-full py-2 px-4 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 flex items-center"
+                >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
